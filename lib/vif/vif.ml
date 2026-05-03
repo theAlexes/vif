@@ -29,6 +29,7 @@ module Route = struct
 
   let get t = Handler (Request (Some `GET, Null), t)
   let head t = Handler (Request (Some `HEAD, Null), t)
+  let options t = Handler (Request (Some `OPTIONS, Null), t)
   let delete t = Handler (Request (Some `DELETE, Null), t)
   let post c t = Handler (Request (Some `POST, c), t)
   let put c t = Handler (Request (Some `PUT, c), t)
@@ -269,7 +270,7 @@ let handler ~default ~middlewares routes daemon =
     try
       let fn = dispatch ~meth ~request ~target in
       match meth with
-      | `GET | `HEAD | `DELETE ->
+      | `GET | `HEAD | `OPTIONS | `DELETE ->
           (* NOTE(dinosaure): For methods without a request body (Null encoding),
              there is no risk of deadlock between the reader task and the handler.
              We can safely execute the handler inline, avoiding the overhead of
@@ -287,7 +288,7 @@ let handler ~default ~middlewares routes daemon =
                   (Printexc.to_string exn));
             Vif_core.Request0.report_exn req0 exn
           end
-      | _ ->
+      | `PUT | `CONNECT | `TRACE | `POST | `Other _ ->
           (* NOTE(dinosaure): For methods that may carry a request body (POST,
              PUT, PATCH, etc.), the handler must not block the httpcats callback.
              The body is delivered via callbacks from the reader task, and if the
