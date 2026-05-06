@@ -8,6 +8,7 @@ type 'socket t = {
   ; reqd: reqd
   ; conn: conn
   ; socket: 'socket
+  ; long_running: bool ref
   ; on_localhost: bool Lazy.t
   ; body: [ `V1 of H1.Body.Reader.t | `V2 of H2.Body.Reader.t ]
   ; queries: (string * string list) list Lazy.t
@@ -97,7 +98,19 @@ let of_reqd ?(with_tls = Fun.const None) ?(peer = Fun.const "<socket>")
     end
   in
   let queries = lazy (Pct.query_of_target target) in
-  { request; tls; reqd; conn; socket; on_localhost; body; queries; tags }
+  let long_running = ref false in
+  {
+    request
+  ; tls
+  ; reqd
+  ; conn
+  ; socket
+  ; long_running
+  ; on_localhost
+  ; body
+  ; queries
+  ; tags
+  }
 
 let headers { request; _ } =
   match request with
@@ -130,6 +143,8 @@ let version { request; _ } = match request with V1 _ -> 1 | V2 _ -> 2
 let tls { tls; _ } = tls
 let on_localhost { on_localhost; _ } = Lazy.force on_localhost
 let reqd { reqd; _ } = reqd
+let make_long_running { long_running; _ } = long_running := true
+let is_long_running { long_running; _ } = !long_running
 
 let source { reqd; tags; _ } =
   Log.debug (fun m ->

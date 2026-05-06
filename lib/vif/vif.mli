@@ -555,6 +555,14 @@ module Request : sig
 
   val target_of_request : request -> string
   (** [target_of_request] is the path of the given request. *)
+
+  val make_long_running : request -> unit
+  (** [make_long_running] sets the long-running flag, informing the dispatcher
+      that the handler is likely to block. *)
+
+  val is_long_running : request -> bool
+  (** [is_long_running] checks the long-running flag, indicating that some
+      previously-executed middleware has set it. *)
 end
 
 module Queries : sig

@@ -269,37 +269,45 @@ let handler ~default ~middlewares routes daemon =
     let meth = Vif_core.Request0.meth req0 in
     try
       let fn = dispatch ~meth ~request ~target in
-      match meth with
-      | `GET | `HEAD | `OPTIONS | `DELETE ->
+      let handle_inline =
+        (* NOTE(atax1a): middleware can know ahead-of-time if a GET route is
+           likely to block and is thus worth the overhead of letting it run via
+           the queue. *)
+        match meth with
+        | _ when Vif_core.Request0.is_long_running req0 -> false
+        | `GET | `HEAD | `OPTIONS | `DELETE -> true
+        | `PUT | `CONNECT | `TRACE | `POST | `Other _ -> false
+      in
+      if handle_inline then
+        begin try
           (* NOTE(dinosaure): For methods without a request body (Null encoding),
-             there is no risk of deadlock between the reader task and the handler.
-             We can safely execute the handler inline, avoiding the overhead of
-             the queue/daemon/Miou.async pattern. *)
-          begin try
-            let Vif_core.Response.Sent, () =
-              Vif_core.Response.(run ~now req0 Empty)
-                (fn daemon.server daemon.user's_value)
-            in
-            Log.debug (fun m -> m "Response terminated, close our request");
-            Vif_core.Request0.shutdown req0
-          with exn ->
-            Log.err (fun m ->
-                m "Unexpected response from our handler: %s"
-                  (Printexc.to_string exn));
-            Vif_core.Request0.report_exn req0 exn
-          end
-      | `PUT | `CONNECT | `TRACE | `POST | `Other _ ->
-          (* NOTE(dinosaure): For methods that may carry a request body (POST,
-             PUT, PATCH, etc.), the handler must not block the httpcats callback.
-             The body is delivered via callbacks from the reader task, and if the
-             handler blocks waiting for body data while occupying the callback,
-             the reader cannot feed more data — causing a deadlock.
-             We therefore queue the request for deferred execution. *)
-          begin
-            Miou.Mutex.protect daemon.mutex @@ fun () ->
-            Queue.push (User's_request (req0, fn)) daemon.queue;
-            Miou.Condition.signal daemon.condition
-          end
+               there is no risk of deadlock between the reader task and the handler.
+               We can safely execute the handler inline, avoiding the overhead of
+               the queue/daemon/Miou.async pattern. *)
+          let Vif_core.Response.Sent, () =
+            Vif_core.Response.(run ~now req0 Empty)
+              (fn daemon.server daemon.user's_value)
+          in
+          Log.debug (fun m -> m "Response terminated, close our request");
+          Vif_core.Request0.shutdown req0
+        with exn ->
+          Log.err (fun m ->
+              m "Unexpected response from our handler: %s"
+                (Printexc.to_string exn));
+          Vif_core.Request0.report_exn req0 exn
+        end
+      else
+        (* NOTE(dinosaure): For methods that may carry a request body (POST,
+           PUT, PATCH, etc.), the handler must not block the httpcats callback.
+           The body is delivered via callbacks from the reader task, and if the
+           handler blocks waiting for body data while occupying the callback,
+           the reader cannot feed more data — causing a deadlock.
+           We therefore queue the request for deferred execution. *)
+      begin
+        Miou.Mutex.protect daemon.mutex @@ fun () ->
+        Queue.push (User's_request (req0, fn)) daemon.queue;
+        Miou.Condition.signal daemon.condition
+      end
     with exn ->
       let bt = Printexc.get_raw_backtrace () in
       Log.err (fun m ->

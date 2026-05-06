@@ -76,3 +76,5 @@ type 'socket request = 'socket Vif_request0.t
 let headers_of_request = Vif_request0.headers
 let method_of_request = Vif_request0.meth
 let target_of_request = Vif_request0.target
+let make_long_running = Vif_request0.make_long_running
+let is_long_running = Vif_request0.is_long_running
